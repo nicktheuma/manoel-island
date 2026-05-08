@@ -1,0 +1,15 @@
+node_modules
+dist
+.env
+.env.local
+*.log
+.DS_Store
+
+# Supabase CLI working directories (project link, branches, edge fns)
+supabase/.temp/
+supabase/.branches/
+
+# CloudIsle LiDAR staging — tiles can be many GB, never commit raw data
+data/cloudisle/
+*.laz
+*.las

@@ -1,0 +1,47 @@
+{
+  "name": "manoel-island-sandbox",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "lint": "tsc --noEmit",
+    "fetch-cloudisle": "node scripts/fetch-cloudisle.mjs",
+    "build-base-mesh": "node scripts/build-base-mesh.mjs",
+    "build-manoel": "node scripts/build-manoel.mjs",
+    "supabase:link": "supabase link",
+    "supabase:push": "supabase db push",
+    "supabase:setup": "npm run supabase:push && npm run bootstrap-supabase",
+    "bootstrap-supabase": "node scripts/bootstrap-supabase.mjs"
+  },
+  "dependencies": {
+    "@react-three/drei": "^9.117.3",
+    "@react-three/fiber": "^8.17.10",
+    "@supabase/supabase-js": "^2.49.1",
+    "@types/leaflet": "^1.9.21",
+    "leaflet": "^1.9.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1",
+    "three": "^0.170.0",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@gltf-transform/core": "^4.3.0",
+    "@gltf-transform/extensions": "^4.3.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.170.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "draco3dgltf": "^1.5.7",
+    "laz-perf": "^0.0.7",
+    "postcss": "^8.4.49",
+    "supabase": "^2.98.2",
+    "tailwindcss": "^3.4.15",
+    "typescript": "~5.6.3",
+    "vite": "^5.4.11"
+  }
+}
