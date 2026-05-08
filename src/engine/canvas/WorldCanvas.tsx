@@ -39,10 +39,17 @@ function Scene({ sculpt }: Props) {
         shadow-camera-bottom={-96}
       />
       <SoftShadows size={28} samples={14} focus={0.35} />
-      {adminConfig.terrainVisible && <TerrainSystem sculptActive={sculptActive} sculpt={sculpt} />}
+      {/* When the LiDAR mesh is loaded, sculpting is applied directly to
+          its vertices via CustomIslandMesh, so we suppress the chunked
+          fallback plane to avoid double-rendering and z-fighting. The
+          chunked plane only appears when the admin disables the custom
+          mesh (e.g. raw demo / fallback world without LiDAR data). */}
+      {adminConfig.terrainVisible && !adminConfig.customMeshEnabled && (
+        <TerrainSystem sculptActive={sculptActive} sculpt={sculpt} />
+      )}
       {adminConfig.treesVisible && <InstancedTrees />}
       <OSMLayers />
-      <CustomIslandMesh />
+      <CustomIslandMesh sculptActive={sculptActive} sculpt={sculpt} />
       <PlacedInstances />
       <PlacementManager active={placeActive} onTransformDragging={setOrbitLocked} />
       <OrbitControls

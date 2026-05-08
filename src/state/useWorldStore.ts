@@ -67,25 +67,6 @@ function makeFlatHeights(res: number, base = 0): Float32Array {
   return h
 }
 
-/** Subtle island shape for demo */
-function seedIslandHeights(cx: number, cz: number, res: number, grid: number): Float32Array {
-  const h = makeFlatHeights(res, 0)
-  const cxn = (cx + 0.5) / grid - 0.5
-  const czn = (cz + 0.5) / grid - 0.5
-  const dist = Math.sqrt(cxn * cxn + czn * czn)
-  const lift = Math.max(0, 1 - dist * 1.8) * 4
-  for (let z = 0; z < res; z++) {
-    for (let x = 0; x < res; x++) {
-      const u = x / (res - 1) - 0.5
-      const v = z / (res - 1) - 0.5
-      const d = Math.sqrt(u * u + v * v)
-      const roll = Math.sin(u * 6) * 0.15 + Math.cos(v * 5) * 0.12
-      h[z * res + x] = lift * (1 - d * 1.2) + roll
-    }
-  }
-  return h
-}
-
 /**
  * The canonical Manoel Island base world. Use a stable UUID so anyone
  * deploying the site points at the same Supabase row by default. Override
@@ -104,11 +85,16 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   pendingSculpt: new Map(),
 
   initEmptyWorld: (worldId) => {
+    // Heights are interpreted as **deltas from the LiDAR base mesh**: zero
+    // means "match the LiDAR exactly", positive means "raise this vertex
+    // above the LiDAR" (infill), negative means "push it below" (excavate).
+    // Starting flat at zero means a fresh world looks identical to the
+    // pristine LiDAR; sculpting then visibly deforms it.
     const { chunkGrid, resolution } = get()
     const heights = new Map<string, Float32Array>()
     for (let cz = 0; cz < chunkGrid; cz++) {
       for (let cx = 0; cx < chunkGrid; cx++) {
-        heights.set(chunkKey(cx, cz), seedIslandHeights(cx, cz, resolution, chunkGrid))
+        heights.set(chunkKey(cx, cz), makeFlatHeights(resolution, 0))
       }
     }
     set({ worldId: worldId ?? get().worldId, heights, placed: new Map(), pendingSculpt: new Map() })
@@ -126,6 +112,9 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   applySculptDeltas: (cx, cz, deltas) => {
+    // Clamp values are *delta* extremes (units = world). Keep them generous
+    // enough for a useful 3D crater/mound but tight enough that a runaway
+    // brush stroke can't hide the LiDAR baseline entirely.
     const key = chunkKey(cx, cz)
     const { heights, resolution } = get()
     const arr = heights.get(key) ?? makeFlatHeights(resolution)
@@ -206,12 +195,19 @@ export const useWorldStore = create<WorldState>((set, get) => ({
   },
 
   sampleHeightBilinear: (worldX, worldZ) => {
+    // Bilinearly samples the chunked delta-from-LiDAR heightmap at any
+    // world XZ. Returns 0 outside the chunk grid so vertices beyond the
+    // sculpt zone aren't displaced — gives the LiDAR shore/sea its
+    // pristine shape regardless of how aggressively the centre is sculpted.
+    const { chunkGrid, chunkSize } = get()
+    const half = (chunkGrid * chunkSize) / 2
+    if (worldX < -half || worldX > half || worldZ < -half || worldZ > half) return 0
     const { cx, cz, lx, lz } = worldXZToChunk(worldX, worldZ)
-    const { resolution, chunkSize } = get()
+    const { resolution } = get()
     const arr = get().getHeights(cx, cz)
-    const half = chunkSize / 2
-    const u = ((lx + half) / chunkSize) * (resolution - 1)
-    const v = ((lz + half) / chunkSize) * (resolution - 1)
+    const halfC = chunkSize / 2
+    const u = ((lx + halfC) / chunkSize) * (resolution - 1)
+    const v = ((lz + halfC) / chunkSize) * (resolution - 1)
     const x0 = Math.floor(u)
     const z0 = Math.floor(v)
     const x1 = Math.min(resolution - 1, x0 + 1)
