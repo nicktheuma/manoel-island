@@ -208,6 +208,10 @@ export function App() {
       if (!mounted) return
 
       setCanAdmin(allowed)
+      // Owners and editors bypass the action-point throttle entirely.
+      // Flip the token store flag in lock-step with `canAdmin` so the
+      // HUD shows ∞ the moment we know who's signed in.
+      useTokenStore.getState().setUnlimited(allowed)
       if (!allowed) setAdminEnabled(false)
 
       // Always hydrate from the server when we got a row back, even when

@@ -15,12 +15,14 @@ function formatRemaining(iso: string | null) {
 export function TokenHUD() {
   const points = useTokenStore((s) => s.points)
   const nextRefillAt = useTokenStore((s) => s.nextRefillAt)
+  const unlimited = useTokenStore((s) => s.unlimited)
   const [, setTick] = useState(0)
 
   useEffect(() => {
+    if (unlimited) return
     const id = setInterval(() => setTick((n) => n + 1), 500)
     return () => clearInterval(id)
-  }, [])
+  }, [unlimited])
 
   const countdown = useMemo(() => formatRemaining(nextRefillAt), [nextRefillAt, points])
 
@@ -28,15 +30,26 @@ export function TokenHUD() {
     <div className="pointer-events-auto absolute right-4 top-4 z-10 rounded-2xl border border-stone-800/80 bg-stone-950/85 px-4 py-3 shadow-xl backdrop-blur-md">
       <p className="text-xs font-semibold uppercase tracking-widest text-stone-500">Action points</p>
       <div className="mt-2 flex items-baseline gap-3">
-        <span className="text-3xl font-bold tabular-nums text-stone-50">{points}</span>
-        <span className="text-sm text-stone-400">
-          Next <span className="tabular-nums text-stone-200">{countdown}</span>
-        </span>
+        {unlimited ? (
+          <>
+            <span className="text-3xl font-bold tabular-nums text-amber-300">∞</span>
+            <span className="text-sm text-stone-400">Admin</span>
+          </>
+        ) : (
+          <>
+            <span className="text-3xl font-bold tabular-nums text-stone-50">{points}</span>
+            <span className="text-sm text-stone-400">
+              Next <span className="tabular-nums text-stone-200">{countdown}</span>
+            </span>
+          </>
+        )}
       </div>
       <p className="mt-2 text-[11px] leading-snug text-stone-500">
-        {isSupabaseConfigured()
-          ? 'Tokens are enforced server-side via RPC + RLS.'
-          : 'Demo mode: local refill timer (set VITE_DEMO_REFILL_MS).'}
+        {unlimited
+          ? 'Owners and editors commit without consuming tokens.'
+          : isSupabaseConfigured()
+            ? 'Tokens are enforced server-side via RPC + RLS.'
+            : 'Demo mode: local refill timer (set VITE_DEMO_REFILL_MS).'}
       </p>
     </div>
   )

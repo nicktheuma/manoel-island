@@ -8,7 +8,9 @@ const CLIENT_VERSION = '1.0.0'
 export type CommitResult = {
   eventId: string
   newPoints: number
-  nextRefillAt: string
+  nextRefillAt: string | null
+  /** True when the caller is an admin (owner/editor) and bypasses tokens. */
+  unlimited: boolean
 }
 
 export async function commitWorldEvent(
@@ -35,6 +37,7 @@ export async function commitWorldEvent(
       eventId,
       newPoints: t.points,
       nextRefillAt: t.nextRefillAt ?? new Date().toISOString(),
+      unlimited: false,
     }
   }
 
@@ -52,10 +55,16 @@ export async function commitWorldEvent(
     throw error
   }
 
-  const row = data as { event_id?: string; new_points?: number; next_refill_at?: string }
+  const row = data as {
+    event_id?: string
+    new_points?: number
+    next_refill_at?: string | null
+    unlimited?: boolean
+  }
   return {
     eventId: row.event_id ?? '',
     newPoints: row.new_points ?? 0,
-    nextRefillAt: row.next_refill_at ?? new Date().toISOString(),
+    nextRefillAt: row.next_refill_at ?? null,
+    unlimited: Boolean(row.unlimited),
   }
 }

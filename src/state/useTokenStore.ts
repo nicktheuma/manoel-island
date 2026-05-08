@@ -6,10 +6,13 @@ type TokenState = {
   points: number
   nextRefillAt: string | null
   refillIntervalMs: number
+  /** Set by App.tsx after the admin-access check; true ⇒ never throttle. */
+  unlimited: boolean
+  setUnlimited: (v: boolean) => void
   setFromServer: (points: number, nextRefillAt: string, intervalMs?: number) => void
-  /** Demo / optimistic local decrement */
-  applyCommitResult: (newPoints: number, nextRefillAt: string) => void
-  /** Returns false if no points (local-only path) */
+  /** Server-authoritative apply after a successful commit. */
+  applyCommitResult: (newPoints: number, nextRefillAt: string | null, unlimited?: boolean) => void
+  /** Demo-only optimistic decrement; never gates admins. Returns false if blocked. */
   tryConsumeLocal: () => boolean
   tickLocalRefill: () => void
   resetDemo: () => void
@@ -19,6 +22,9 @@ export const useTokenStore = create<TokenState>((set, get) => ({
   points: 3,
   nextRefillAt: new Date(Date.now() + DEMO_REFILL_MS).toISOString(),
   refillIntervalMs: DEMO_REFILL_MS,
+  unlimited: false,
+
+  setUnlimited: (v) => set({ unlimited: v }),
 
   setFromServer: (points, nextRefillAt, intervalMs) =>
     set({
@@ -27,10 +33,16 @@ export const useTokenStore = create<TokenState>((set, get) => ({
       refillIntervalMs: intervalMs ?? get().refillIntervalMs,
     }),
 
-  applyCommitResult: (newPoints, nextRefillAt) => set({ points: newPoints, nextRefillAt }),
+  applyCommitResult: (newPoints, nextRefillAt, unlimited) =>
+    set({
+      points: unlimited ? -1 : newPoints,
+      nextRefillAt: unlimited ? null : nextRefillAt,
+      unlimited: unlimited ?? get().unlimited,
+    }),
 
   tryConsumeLocal: () => {
-    const { points, nextRefillAt, refillIntervalMs } = get()
+    const { unlimited, points, nextRefillAt, refillIntervalMs } = get()
+    if (unlimited) return true
     if (points < 1) return false
     const np = points - 1
     set({
@@ -42,7 +54,8 @@ export const useTokenStore = create<TokenState>((set, get) => ({
   },
 
   tickLocalRefill: () => {
-    const { points, nextRefillAt, refillIntervalMs } = get()
+    const { unlimited, points, nextRefillAt, refillIntervalMs } = get()
+    if (unlimited) return
     if (!nextRefillAt) return
     const next = new Date(nextRefillAt).getTime()
     if (Date.now() < next) return
@@ -57,5 +70,6 @@ export const useTokenStore = create<TokenState>((set, get) => ({
       points: 3,
       nextRefillAt: new Date(Date.now() + DEMO_REFILL_MS).toISOString(),
       refillIntervalMs: DEMO_REFILL_MS,
+      unlimited: false,
     }),
 }))

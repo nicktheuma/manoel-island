@@ -13,9 +13,12 @@ export function CommitBar({ sculpt }: Props) {
   const mode = useUIStore((s) => s.interactionMode)
   const worldId = useWorldStore((s) => s.worldId)
   const points = useTokenStore((s) => s.points)
+  const unlimited = useTokenStore((s) => s.unlimited)
   const draft = usePlacementStore((s) => s.draft)
 
-  const canAct = points >= 1
+  // Admins (owner/editor) bypass the rate limit entirely; everyone else
+  // needs at least one action point queued up.
+  const canAct = unlimited || points >= 1
 
   const onCommitSculpt = async () => {
     const chunks = sculpt.collectPatchesForCommit()
@@ -28,7 +31,7 @@ export function CommitBar({ sculpt }: Props) {
         resolution: TERRAIN_RESOLUTION,
         chunks,
       })
-      useTokenStore.getState().applyCommitResult(res.newPoints, res.nextRefillAt)
+      useTokenStore.getState().applyCommitResult(res.newPoints, res.nextRefillAt, res.unlimited)
     } catch (e) {
       if (String(e).includes('insufficient')) {
         window.alert('No action points left — wait for refill.')
@@ -53,7 +56,7 @@ export function CommitBar({ sculpt }: Props) {
       useWorldStore.getState().upsertPlaced(draft.objectId, draft.assetId, draft.matrix)
       usePlacementStore.getState().setDraft(null)
       useUIStore.getState().setShowTransformGizmo(false)
-      useTokenStore.getState().applyCommitResult(res.newPoints, res.nextRefillAt)
+      useTokenStore.getState().applyCommitResult(res.newPoints, res.nextRefillAt, res.unlimited)
     } catch (e) {
       if (String(e).includes('insufficient')) {
         window.alert('No action points left — wait for refill.')
@@ -73,7 +76,7 @@ export function CommitBar({ sculpt }: Props) {
           onClick={() => void onCommitSculpt()}
           className="rounded-xl bg-amber-500 px-5 py-2 text-sm font-semibold text-stone-950 shadow-lg transition enabled:hover:bg-amber-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          Commit sculpt (1 pt)
+          Commit sculpt{unlimited ? '' : ' (1 pt)'}
         </button>
       )}
       {mode === 'place' && (
@@ -83,10 +86,10 @@ export function CommitBar({ sculpt }: Props) {
           onClick={() => void onCommitPlace()}
           className="rounded-xl bg-emerald-500 px-5 py-2 text-sm font-semibold text-stone-950 shadow-lg transition enabled:hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          OK — place object (1 pt)
+          OK — place object{unlimited ? '' : ' (1 pt)'}
         </button>
       )}
-      {!canAct && (
+      {!canAct && !unlimited && (
         <span className="self-center text-xs text-stone-500">Wait for next action point…</span>
       )}
     </div>
