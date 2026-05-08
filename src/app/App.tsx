@@ -187,26 +187,35 @@ export function App() {
   useEffect(() => {
     let mounted = true
     ;(async () => {
+      // Step 1: admin access. A failure here is the only thing that should
+      // ever flip `canAdmin` back to false (e.g. user signed out, RLS denial).
+      let allowed = false
       try {
-        const allowed = await getWorldAdminAccess(worldId)
-        if (!mounted) return
-        setCanAdmin(allowed)
-        if (!allowed) setAdminEnabled(false)
-        if (allowed) {
-          const cfg = await loadWorldAdminConfig(worldId)
-          if (mounted) {
-            setAdminConfig(cfg)
-            setAdminConfigHydrated(true)
-          }
-        } else if (mounted) {
-          setAdminConfigHydrated(false)
+        allowed = await getWorldAdminAccess(worldId)
+      } catch (e) {
+        console.warn('Admin access check failed:', e)
+        allowed = false
+      }
+      if (!mounted) return
+      setCanAdmin(allowed)
+      if (!allowed) {
+        setAdminEnabled(false)
+        setAdminConfigHydrated(false)
+        return
+      }
+
+      // Step 2: config hydration. A failure here is non-fatal — fall back
+      // to the default config and keep the admin panel reachable, otherwise
+      // a transient network blip flicks the Admin button off mid-session.
+      try {
+        const cfg = await loadWorldAdminConfig(worldId)
+        if (mounted) {
+          setAdminConfig(cfg)
+          setAdminConfigHydrated(true)
         }
       } catch (e) {
-        console.warn('Admin access/config load failed:', e)
-        if (mounted) {
-          setCanAdmin(false)
-          setAdminConfigHydrated(false)
-        }
+        console.warn('Admin config load failed (using defaults):', e)
+        if (mounted) setAdminConfigHydrated(true)
       }
     })()
     return () => {
