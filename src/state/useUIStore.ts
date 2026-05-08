@@ -12,6 +12,15 @@ export type AdminConfig = {
   osmVegetationVisible: boolean
   osmSeaVisible: boolean
   osmSeaColor: string
+  /** Manual transform overrides applied to the entire `<group name="OSMLayers">`.
+   * `osmScaleY` multiplies the vertical axis (building/tree heights, sea bob,
+   * heightmap relief). `osmOffset{X,Y,Z}` shifts the group in world units so
+   * admins can nudge the OSM overlay relative to the LiDAR base mesh.
+   * Defaults are 1, 0, 0, 0 (no transform). */
+  osmScaleY: number
+  osmOffsetX: number
+  osmOffsetY: number
+  osmOffsetZ: number
   customMeshEnabled: boolean
   customMeshUrl: string
   customMeshColor: string
@@ -67,6 +76,10 @@ export const useUIStore = create<UIState>((set) => ({
     osmVegetationVisible: true,
     osmSeaVisible: true,
     osmSeaColor: '#bcd9ec',
+    osmScaleY: 1,
+    osmOffsetX: 0,
+    osmOffsetY: 0,
+    osmOffsetZ: 0,
     customMeshEnabled: true,
     customMeshUrl: '/models/manoel-island.glb',
     customMeshColor: '#f5f5f4',

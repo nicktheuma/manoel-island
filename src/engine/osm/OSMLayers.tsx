@@ -300,8 +300,16 @@ export function OSMLayers() {
   }, [bbox, baseHeightmap])
 
   if (!cfg.osmLayersEnabled) return null
+  // Manual admin overrides on top of the (auto) world-anchored OSM frame.
+  // Position is applied additively in world units; scaleY multiplies the
+  // vertical axis only — horizontal scaling would break the lat/lon ↔ XZ
+  // correspondence with the LiDAR mesh, which we want to preserve.
   return (
-    <group name="OSMLayers">
+    <group
+      name="OSMLayers"
+      position={[cfg.osmOffsetX, cfg.osmOffsetY, cfg.osmOffsetZ]}
+      scale={[1, cfg.osmScaleY, 1]}
+    >
       {cfg.osmTerrainVisible && <HeightmapTerrain />}
       {cfg.osmSeaVisible && (
         <WaterLayer widthWorld={dims.widthWorld} depthWorld={dims.depthWorld} color={cfg.osmSeaColor} />

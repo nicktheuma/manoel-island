@@ -210,6 +210,80 @@ export function AdminPanel() {
             onChange={(e) => patch({ osmVegetationVisible: e.target.checked })}
           />
         </label>
+
+        <div className="mt-3 border-t border-stone-800 pt-3 space-y-2">
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-stone-500">
+            OSM transform
+          </p>
+          <p className="text-[10px] leading-snug text-stone-500">
+            Manual nudges on top of the auto-anchored OSM group. Reset to 1 / 0 to fall back
+            to the geographic alignment.
+          </p>
+
+          <label className="block text-[11px] text-stone-400">
+            Z scale (vertical)
+            <span className="ml-1 tabular-nums text-stone-200">{cfg.osmScaleY.toFixed(2)}×</span>
+            <input
+              className={rangeClass}
+              type="range"
+              min={0.1}
+              max={5}
+              step={0.05}
+              value={cfg.osmScaleY}
+              onChange={(e) => patch({ osmScaleY: Number(e.target.value) })}
+            />
+          </label>
+
+          <label className="block text-[11px] text-stone-400">
+            X position
+            <span className="ml-1 tabular-nums text-stone-200">{cfg.osmOffsetX.toFixed(2)}</span>
+            <input
+              className={rangeClass}
+              type="range"
+              min={-100}
+              max={100}
+              step={0.1}
+              value={cfg.osmOffsetX}
+              onChange={(e) => patch({ osmOffsetX: Number(e.target.value) })}
+            />
+          </label>
+          <label className="block text-[11px] text-stone-400">
+            Y position
+            <span className="ml-1 tabular-nums text-stone-200">{cfg.osmOffsetY.toFixed(2)}</span>
+            <input
+              className={rangeClass}
+              type="range"
+              min={-50}
+              max={50}
+              step={0.1}
+              value={cfg.osmOffsetY}
+              onChange={(e) => patch({ osmOffsetY: Number(e.target.value) })}
+            />
+          </label>
+          <label className="block text-[11px] text-stone-400">
+            Z position
+            <span className="ml-1 tabular-nums text-stone-200">{cfg.osmOffsetZ.toFixed(2)}</span>
+            <input
+              className={rangeClass}
+              type="range"
+              min={-100}
+              max={100}
+              step={0.1}
+              value={cfg.osmOffsetZ}
+              onChange={(e) => patch({ osmOffsetZ: Number(e.target.value) })}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() =>
+              patch({ osmScaleY: 1, osmOffsetX: 0, osmOffsetY: 0, osmOffsetZ: 0 })
+            }
+            className="w-full rounded bg-stone-800 px-2 py-1 text-[11px] text-stone-200 hover:bg-stone-700"
+          >
+            Reset OSM transform
+          </button>
+        </div>
       </div>
 
       <div className="mt-4 border-t border-stone-800 pt-3">
