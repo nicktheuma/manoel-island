@@ -1,5 +1,7 @@
 import { ChangeEvent, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { useUIStore } from '../../state/useUIStore'
+import { useWorldStore } from '../../state/useWorldStore'
+import { commitWorldEvent } from '../../services/supabase/commits'
 import { MapImportPanel } from './MapImportPanel'
 
 const rangeClass = 'w-full accent-amber-300'
@@ -12,6 +14,7 @@ export function AdminPanel() {
   const cfg = useUIStore((s) => s.adminConfig)
   const patch = useUIStore((s) => s.patchAdminConfig)
   const [importOpen, setImportOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
   const [pos, setPos] = useState({ x: 16, y: 80 })
   const dragRef = useRef<{
     dragging: boolean
@@ -62,6 +65,28 @@ export function AdminPanel() {
     patch({ customMeshUrl: objUrl, customMeshEnabled: true })
   }
 
+  const onResetTerrain = async () => {
+    const ok = window.confirm(
+      'Reset the terrain to the original LiDAR mesh?\n\n' +
+        'This wipes every sculpt across all users. The action is broadcast in real time and cannot be undone.',
+    )
+    if (!ok) return
+    setResetting(true)
+    try {
+      const worldId = useWorldStore.getState().worldId
+      await commitWorldEvent(worldId, 'RESET_TERRAIN', {})
+      // The realtime subscription will also clear local state, but doing
+      // it eagerly here keeps the admin's own canvas snappy without
+      // waiting for the round-trip.
+      useWorldStore.getState().resetHeights()
+    } catch (e) {
+      console.error('Reset terrain failed:', e)
+      window.alert('Reset failed (see console).')
+    } finally {
+      setResetting(false)
+    }
+  }
+
   if (!adminEnabled || !canAdmin) return null
 
   return (
@@ -79,15 +104,34 @@ export function AdminPanel() {
         </p>
       </div>
 
+      <div className="mt-3 border-t border-stone-800 pt-3">
+        <p className="text-[11px] font-semibold uppercase tracking-widest text-stone-500">Terrain</p>
+        <button
+          type="button"
+          onClick={() => void onResetTerrain()}
+          disabled={resetting}
+          className="mt-2 w-full rounded bg-red-500/90 px-2 py-1.5 text-[11px] font-semibold text-stone-50 transition-colors enabled:hover:bg-red-500 disabled:opacity-60"
+        >
+          {resetting ? 'Resetting…' : 'Reset terrain to LiDAR'}
+        </button>
+        <p className="mt-1 text-[10px] leading-snug text-stone-500">
+          Wipes every sculpt across all users and broadcasts the reset in real time.
+        </p>
+      </div>
+
       <div className="mt-4 space-y-2 text-xs">
         <label className="flex items-center justify-between">
-          <span className="text-stone-300">Show sculpt terrain</span>
+          <span className="text-stone-300">Show sculpt fallback terrain</span>
           <input
             type="checkbox"
             checked={cfg.terrainVisible}
             onChange={(e) => patch({ terrainVisible: e.target.checked })}
           />
         </label>
+        <p className="text-[10px] leading-snug text-stone-500">
+          Only shown when the LiDAR mesh is disabled below — the chunked plane is the
+          fallback canvas in worlds without a base mesh.
+        </p>
         <label className="flex items-center justify-between">
           <span className="text-stone-300">Show trees</span>
           <input

@@ -1,4 +1,9 @@
-export type WorldEventType = 'SCULPT' | 'ADD_OBJECT' | 'UPDATE_OBJECT' | 'REMOVE_OBJECT'
+export type WorldEventType =
+  | 'SCULPT'
+  | 'ADD_OBJECT'
+  | 'UPDATE_OBJECT'
+  | 'REMOVE_OBJECT'
+  | 'RESET_TERRAIN'
 
 /** patches: [vertexIndex, absoluteY] for idempotent apply (multiplayer + local echo) */
 export type SculptPayload = {

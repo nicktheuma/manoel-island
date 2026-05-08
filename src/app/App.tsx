@@ -11,6 +11,7 @@ import { getWorldAdminAccess, loadWorldAdminConfig, saveWorldAdminConfig } from 
 import { AssetBrowser } from '../ui/sidebar/AssetBrowser'
 import { TokenHUD } from '../ui/overlay/TokenHUD'
 import { CommitBar } from '../ui/overlay/CommitBar'
+import { SculptToolbar } from '../ui/overlay/SculptToolbar'
 import { AdminPanel } from '../ui/admin/AdminPanel'
 import { SignInDialog } from '../ui/auth/SignInDialog'
 
@@ -168,7 +169,11 @@ export function App() {
           useWorldStore.getState().upsertPlaced(po.id, po.asset_id, po.transform as number[])
         }
         for (const ev of events) {
-          if (ev.event_type === 'SCULPT') {
+          // Replay both sculpts and terrain resets in chronological order
+          // so a RESET_TERRAIN at seq=N wipes all prior SCULPTs on cold
+          // start. Object events are handled separately above via
+          // `placed_objects` snapshot reads.
+          if (ev.event_type === 'SCULPT' || ev.event_type === 'RESET_TERRAIN') {
             useWorldStore.getState().applyRemoteEvent(ev as Pick<WorldEventRow, 'event_type' | 'payload'>)
           }
         }
@@ -248,6 +253,7 @@ export function App() {
       <WorldCanvas sculpt={sculpt} />
       <AssetBrowser />
       <ModeToolbar />
+      <SculptToolbar />
       <TokenHUD />
       <CommitBar sculpt={sculpt} />
       <AdminPanel />

@@ -48,6 +48,8 @@ type WorldState = {
   pendingSculpt: Map<string, [number, number][]>
   initEmptyWorld: (worldId?: string) => void
   getHeights: (cx: number, cz: number) => Float32Array
+  /** Wipe every chunked delta back to zero — used by RESET_TERRAIN. */
+  resetHeights: () => void
   /** Preview: additive delta while brushing */
   applySculptDeltas: (cx: number, cz: number, deltas: [number, number][]) => void
   /** Commit / network: absolute height per vertex index */
@@ -109,6 +111,17 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       heights.set(key, arr)
     }
     return arr
+  },
+
+  resetHeights: () => {
+    const { chunkGrid, resolution } = get()
+    const heights = new Map<string, Float32Array>()
+    for (let cz = 0; cz < chunkGrid; cz++) {
+      for (let cx = 0; cx < chunkGrid; cx++) {
+        heights.set(chunkKey(cx, cz), makeFlatHeights(resolution, 0))
+      }
+    }
+    set({ heights, pendingSculpt: new Map() })
   },
 
   applySculptDeltas: (cx, cz, deltas) => {
@@ -181,6 +194,8 @@ export const useWorldStore = create<WorldState>((set, get) => ({
       for (const c of p.chunks) {
         get().applySculptPatches(c.chunkX, c.chunkZ, c.patches)
       }
+    } else if (event_type === 'RESET_TERRAIN') {
+      get().resetHeights()
     } else if (event_type === 'ADD_OBJECT') {
       const p = payload as ObjectPayload
       const m = p.transform
