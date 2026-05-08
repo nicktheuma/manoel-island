@@ -12,6 +12,7 @@ import { AssetBrowser } from '../ui/sidebar/AssetBrowser'
 import { TokenHUD } from '../ui/overlay/TokenHUD'
 import { CommitBar } from '../ui/overlay/CommitBar'
 import { AdminPanel } from '../ui/admin/AdminPanel'
+import { SignInDialog } from '../ui/auth/SignInDialog'
 
 function ModeToolbar() {
   const mode = useUIStore((s) => s.interactionMode)
@@ -55,6 +56,8 @@ function ModeToolbar() {
 function AuthBanner() {
   const configured = isSupabaseConfigured()
   const [email, setEmail] = useState<string | null>(null)
+  const [dialogOpen, setDialogOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
     const sb = getSupabase()
@@ -78,16 +81,46 @@ function AuthBanner() {
     )
   }
 
+  async function signOut() {
+    const sb = getSupabase()
+    if (!sb) return
+    setSigningOut(true)
+    try {
+      await sb.auth.signOut()
+    } finally {
+      setSigningOut(false)
+    }
+  }
+
   return (
-    <div className="pointer-events-auto absolute bottom-4 right-4 z-10 rounded-xl border border-stone-800/80 bg-stone-950/80 px-3 py-2 text-[11px] text-stone-400">
-      {email ? (
-        <span>
-          Signed in as <span className="text-stone-200">{email}</span>
-        </span>
-      ) : (
-        <span>Configure Supabase Auth (email) in dashboard; session will appear here.</span>
-      )}
-    </div>
+    <>
+      <div className="pointer-events-auto absolute bottom-4 right-4 z-10 flex items-center gap-2 rounded-xl border border-stone-800/80 bg-stone-950/80 px-3 py-2 text-[11px] text-stone-400">
+        {email ? (
+          <>
+            <span>
+              Signed in as <span className="text-stone-200">{email}</span>
+            </span>
+            <button
+              type="button"
+              onClick={signOut}
+              disabled={signingOut}
+              className="rounded-md border border-stone-700 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-stone-300 hover:bg-stone-800 disabled:opacity-60"
+            >
+              {signingOut ? '…' : 'Sign out'}
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setDialogOpen(true)}
+            className="rounded-md bg-amber-300 px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-stone-900 hover:bg-amber-200"
+          >
+            Sign in
+          </button>
+        )}
+      </div>
+      <SignInDialog open={dialogOpen} onClose={() => setDialogOpen(false)} />
+    </>
   )
 }
 
@@ -100,6 +133,18 @@ export function App() {
   const setAdminConfig = useUIStore((s) => s.setAdminConfig)
   const setAdminEnabled = useUIStore((s) => s.setAdminEnabled)
   const [adminConfigHydrated, setAdminConfigHydrated] = useState(false)
+  // Bumped on every auth state change so the admin-access effect below
+  // re-runs the moment the user signs in or out, without a page reload.
+  const [authTick, setAuthTick] = useState(0)
+
+  useEffect(() => {
+    const sb = getSupabase()
+    if (!sb) return
+    const { data: sub } = sb.auth.onAuthStateChange(() => {
+      setAuthTick((t) => t + 1)
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
 
   useEffect(() => {
     // worldId comes from `useWorldStore`'s default (env `VITE_WORLD_ID` or
@@ -167,7 +212,7 @@ export function App() {
     return () => {
       mounted = false
     }
-  }, [worldId, setAdminConfig, setCanAdmin, setAdminEnabled])
+  }, [worldId, authTick, setAdminConfig, setCanAdmin, setAdminEnabled])
 
   useEffect(() => {
     if (!isSupabaseConfigured() || !adminConfigHydrated) return
