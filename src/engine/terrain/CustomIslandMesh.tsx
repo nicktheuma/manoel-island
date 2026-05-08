@@ -90,22 +90,19 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
     const apply = () => {
       frame = 0
       const scale = scaleRef.current
-      const ox = geoOffset.dx
-      const oz = geoOffset.dz
-      // The mesh sits at world position (ox, yOffset, oz) and is uniformly
-      // scaled by `scale`. A vertex at LOCAL (lx, ly, lz) lands at WORLD
-      //   (lx*scale + ox, ly*scale + yOffset, lz*scale + oz)
-      // We sample the chunked heightmap by that world XZ, scale the delta
-      // back into local Y, then write to the buffer. Without the offset
-      // the sample would always read from world origin and sculpts would
-      // appear at the wrong place after the user picks a 2D-map extent.
+      // Sculpts are stored in **LiDAR-local** XZ — i.e. the chunked
+      // heightmap is anchored to the mesh, not the world origin. That
+      // way the sculpt grid (±chunkGrid·chunkSize/2) covers the entire
+      // LiDAR regardless of how far the geographic offset has pushed
+      // the mesh in world space, and sculpts move with the mesh.
+      // A vertex at LOCAL (lx, ly, lz) samples sampleDelta(lx*scale, lz*scale).
       for (const { mesh, originalY, positionAttr } of baselines.current) {
         const arr = positionAttr.array as Float32Array
         for (let i = 0; i < positionAttr.count; i++) {
           const lx = arr[i * 3 + 0]
           const lz = arr[i * 3 + 2]
-          const wx = lx * scale + ox
-          const wz = lz * scale + oz
+          const wx = lx * scale
+          const wz = lz * scale
           const deltaWorld = sampleDelta(wx, wz)
           arr[i * 3 + 1] = originalY[i] + deltaWorld / scale
         }
@@ -120,7 +117,7 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
     return () => {
       if (frame) cancelAnimationFrame(frame)
     }
-  }, [heights, sampleDelta, geoOffset])
+  }, [heights, sampleDelta])
 
   useEffect(() => {
     return () => {
@@ -129,20 +126,29 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
   }, [material])
 
   // Pointer handlers — only attach when sculpt mode is active so they
-  // don't intercept orbit / placement clicks. The intersection point we
-  // get is in *world* space, exactly what `paintAtWorld` expects.
+  // don't intercept orbit / placement clicks. The intersection point
+  // arrives in *world* space; the chunk grid is anchored to LiDAR-local
+  // space, so we subtract the geographic offset (and undo Y offset)
+  // before passing it to the brush.
+  const toLocal = (p: THREE.Vector3) => {
+    const out = p.clone()
+    out.x -= geoOffset.dx
+    out.z -= geoOffset.dz
+    out.y -= cfg.customMeshYOffset
+    return out
+  }
   const onDown = (e: ThreeEvent<PointerEvent>) => {
     if (!sculptActive) return
     e.stopPropagation()
     ;(e.target as Element).setPointerCapture?.(e.pointerId)
     sculpt.beginStroke()
-    sculpt.paintAtWorld(e.point)
+    sculpt.paintAtWorld(toLocal(e.point))
   }
   const onMove = (e: ThreeEvent<PointerEvent>) => {
     if (!sculptActive) return
     if (e.buttons !== 1) return
     e.stopPropagation()
-    sculpt.paintAtWorld(e.point)
+    sculpt.paintAtWorld(toLocal(e.point))
   }
   const onUp = (e: ThreeEvent<PointerEvent>) => {
     if (!sculptActive) return

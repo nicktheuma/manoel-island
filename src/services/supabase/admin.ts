@@ -11,7 +11,7 @@ const DEFAULT_ADMIN_CONFIG: AdminConfig = {
   osmVegetationVisible: true,
   osmSeaVisible: true,
   osmSeaColor: '#bcd9ec',
-  osmScaleY: 1,
+  osmBuildingsYOffset: 0,
   osmOffsetX: 0,
   osmOffsetY: 0,
   osmOffsetZ: 0,
@@ -42,7 +42,10 @@ function coerceAdminConfig(input: unknown): AdminConfig {
         : DEFAULT_ADMIN_CONFIG.osmVegetationVisible,
     osmSeaVisible: typeof v.osmSeaVisible === 'boolean' ? v.osmSeaVisible : DEFAULT_ADMIN_CONFIG.osmSeaVisible,
     osmSeaColor: typeof v.osmSeaColor === 'string' ? v.osmSeaColor : DEFAULT_ADMIN_CONFIG.osmSeaColor,
-    osmScaleY: typeof v.osmScaleY === 'number' ? v.osmScaleY : DEFAULT_ADMIN_CONFIG.osmScaleY,
+    osmBuildingsYOffset:
+      typeof v.osmBuildingsYOffset === 'number'
+        ? v.osmBuildingsYOffset
+        : DEFAULT_ADMIN_CONFIG.osmBuildingsYOffset,
     osmOffsetX: typeof v.osmOffsetX === 'number' ? v.osmOffsetX : DEFAULT_ADMIN_CONFIG.osmOffsetX,
     osmOffsetY: typeof v.osmOffsetY === 'number' ? v.osmOffsetY : DEFAULT_ADMIN_CONFIG.osmOffsetY,
     osmOffsetZ: typeof v.osmOffsetZ === 'number' ? v.osmOffsetZ : DEFAULT_ADMIN_CONFIG.osmOffsetZ,

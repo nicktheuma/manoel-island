@@ -8,6 +8,8 @@ import { fetchInitialWorldState, subscribeWorldEvents } from '../services/supaba
 import type { WorldEventRow } from '../services/supabase/types'
 import { isSupabaseConfigured, getSupabase } from '../services/supabase/client'
 import { getWorldAdminAccess, loadWorldAdminConfig, saveWorldAdminConfig } from '../services/supabase/admin'
+import { loadWorldOsmImport } from '../services/supabase/osmImports'
+import { useMapImportStore } from '../state/useMapImportStore'
 import { AssetBrowser } from '../ui/sidebar/AssetBrowser'
 import { TokenHUD } from '../ui/overlay/TokenHUD'
 import { CommitBar } from '../ui/overlay/CommitBar'
@@ -208,8 +210,16 @@ export function App() {
         console.warn('Admin config load failed (using defaults):', e)
         return null
       })
+      // Hydrate persisted OSM import (roads, buildings, vegetation, water,
+      // outline, optional Open-Meteo heightmap) for every viewer. RLS
+      // grants anon read on public worlds, so signed-out browsers get
+      // the same overlay the admin saved on import.
+      const osmP = loadWorldOsmImport(worldId).catch((e) => {
+        console.warn('OSM import load failed (using empty):', e)
+        return null
+      })
 
-      const [allowed, cfg] = await Promise.all([accessP, configP])
+      const [allowed, cfg, osm] = await Promise.all([accessP, configP, osmP])
       if (!mounted) return
 
       setCanAdmin(allowed)
@@ -223,6 +233,19 @@ export function App() {
       // anonymous — that way the saved sea colour shows up in private
       // windows / signed-out browsers, exactly like a public CMS.
       if (cfg) setAdminConfig(cfg)
+      if (osm) {
+        const m = useMapImportStore.getState()
+        m.setBBox(osm.bbox)
+        m.setData({
+          roads: osm.roads,
+          buildings: osm.buildings,
+          vegetation: osm.vegetation,
+          water: osm.water,
+          outlineLatLng: osm.outlineLatLng,
+          outlineWorld: osm.outlineWorld,
+          terrain: osm.terrain,
+        })
+      }
       setAdminConfigHydrated(true)
     })()
     return () => {

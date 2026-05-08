@@ -216,22 +216,28 @@ export function AdminPanel() {
             OSM transform
           </p>
           <p className="text-[10px] leading-snug text-stone-500">
-            Manual nudges on top of the auto-anchored OSM group. Reset to 1 / 0 to fall back
-            to the geographic alignment.
+            Manual nudges on top of the auto-anchored OSM group. Reset to 0 to fall back to
+            the geographic alignment.
           </p>
 
           <label className="block text-[11px] text-stone-400">
-            Z scale (vertical)
-            <span className="ml-1 tabular-nums text-stone-200">{cfg.osmScaleY.toFixed(2)}×</span>
+            Buildings vertical offset
+            <span className="ml-1 tabular-nums text-stone-200">
+              {cfg.osmBuildingsYOffset.toFixed(2)}
+            </span>
             <input
               className={rangeClass}
               type="range"
-              min={0.1}
-              max={5}
+              min={-10}
+              max={20}
               step={0.05}
-              value={cfg.osmScaleY}
-              onChange={(e) => patch({ osmScaleY: Number(e.target.value) })}
+              value={cfg.osmBuildingsYOffset}
+              onChange={(e) => patch({ osmBuildingsYOffset: Number(e.target.value) })}
             />
+            <p className="mt-0.5 text-[10px] leading-snug text-stone-500">
+              Lifts or sinks building footprints relative to the LiDAR ground without
+              scaling them or affecting roads, trees, sea, or terrain.
+            </p>
           </label>
 
           <label className="block text-[11px] text-stone-400">
@@ -277,7 +283,7 @@ export function AdminPanel() {
           <button
             type="button"
             onClick={() =>
-              patch({ osmScaleY: 1, osmOffsetX: 0, osmOffsetY: 0, osmOffsetZ: 0 })
+              patch({ osmBuildingsYOffset: 0, osmOffsetX: 0, osmOffsetY: 0, osmOffsetZ: 0 })
             }
             className="w-full rounded bg-stone-800 px-2 py-1 text-[11px] text-stone-200 hover:bg-stone-700"
           >

@@ -12,8 +12,10 @@ import {
 import type { LatLngExpression } from 'leaflet'
 import { fetchOSMLayers, outlineLatLngToWorld } from '../../services/osm/overpass'
 import { fetchTerrainHeightmap } from '../../services/osm/elevation'
+import { saveWorldOsmImport } from '../../services/supabase/osmImports'
 import { useMapImportStore } from '../../state/useMapImportStore'
 import { useUIStore } from '../../state/useUIStore'
+import { useWorldStore } from '../../state/useWorldStore'
 import type { LatLng } from '../../state/useMapImportStore'
 
 type PickState = { a: [number, number] | null; b: [number, number] | null }
@@ -143,6 +145,27 @@ export function MapImportPanel({ open, onClose }: { open: boolean; onClose: () =
       setBBox(bbox)
       setData({ ...data, outlineLatLng: effectiveOutline, outlineWorld, terrain })
       patchAdmin({ osmLayersEnabled: true })
+
+      // Persist so signed-in admins on other devices, signed-out viewers,
+      // and a fresh tab all hydrate the same OSM overlay on next load.
+      // Failures are logged but don't block the local import — the
+      // payload is already in `useMapImportStore`.
+      try {
+        const worldId = useWorldStore.getState().worldId
+        await saveWorldOsmImport(worldId, {
+          bbox,
+          outlineLatLng: effectiveOutline,
+          outlineWorld,
+          roads: data.roads,
+          buildings: data.buildings,
+          vegetation: data.vegetation,
+          water: data.water,
+          terrain,
+        })
+      } catch (saveErr) {
+        console.warn('[MapImport] persist failed (RLS / network):', saveErr)
+      }
+
       setLoading(false)
       setPick({ a: null, b: null })
       setOutline([])

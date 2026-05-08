@@ -77,33 +77,40 @@ function WaterLayer({
     group.current.position.y = -0.2 + Math.sin(clock.getElapsedTime() * 1.3) * 0.03
   })
 
-  // If no explicit OSM water, render an ambient sea plane sized to the bbox
-  if (!polys.length) {
-    return (
-      <group ref={group}>
-        <mesh
-          rotation-x={-Math.PI / 2}
-          position={[0, -0.05, 0]}
-          receiveShadow
-          renderOrder={-1}
-        >
-          <planeGeometry args={[Math.max(widthWorld, depthWorld) * 1.6, Math.max(widthWorld, depthWorld) * 1.6]} />
-          <meshStandardMaterial color={color} roughness={0.85} metalness={0.05} />
-        </mesh>
-      </group>
-    )
-  }
-
+  // Always render the ambient sea plane in the admin's chosen colour —
+  // even when OSM has explicit water polygons, the plane fills the
+  // surrounding bbox so the sea reads as a continuous surface and the
+  // admin's palette choice is honoured everywhere. OSM water polygons
+  // layer on top a sliver higher to add a slightly distinct shoreline
+  // tint without changing the base hue.
+  const planeSize = Math.max(widthWorld, depthWorld) * 1.6
   return (
     <group ref={group}>
+      <mesh rotation-x={-Math.PI / 2} position={[0, -0.05, 0]} receiveShadow renderOrder={-1}>
+        <planeGeometry args={[planeSize, planeSize]} />
+        <meshStandardMaterial color={color} roughness={0.85} metalness={0.05} />
+      </mesh>
       {polys.map((poly, i) => {
         // Pre-negate Z so that after `rotateX(-π/2)` (which flips Y→Z), the
         // shape lands at its real world Z instead of the mirror image.
         const shape = new THREE.Shape(poly.map(([x, z]) => new THREE.Vector2(x, -z)))
         const geo = new THREE.ShapeGeometry(shape)
         return (
-          <mesh key={`w-${i}`} geometry={geo} rotation-x={-Math.PI / 2} receiveShadow>
-            <meshStandardMaterial color={color} roughness={0.85} metalness={0.05} side={THREE.DoubleSide} />
+          <mesh
+            key={`w-${i}`}
+            geometry={geo}
+            rotation-x={-Math.PI / 2}
+            position={[0, 0.01, 0]}
+            receiveShadow
+          >
+            <meshStandardMaterial
+              color={color}
+              roughness={0.7}
+              metalness={0.1}
+              side={THREE.DoubleSide}
+              transparent
+              opacity={0.85}
+            />
           </mesh>
         )
       })}
@@ -181,7 +188,13 @@ function RoadsLayer({ sample }: { sample: (x: number, z: number) => number }) {
   )
 }
 
-function BuildingsLayer({ sample }: { sample: (x: number, z: number) => number }) {
+function BuildingsLayer({
+  sample,
+  yOffset,
+}: {
+  sample: (x: number, z: number) => number
+  yOffset: number
+}) {
   const buildings = useMapImportStore((s) => s.buildings)
   return (
     <group>
@@ -194,7 +207,7 @@ function BuildingsLayer({ sample }: { sample: (x: number, z: number) => number }
         geo.rotateX(-Math.PI / 2)
         const cx = b.footprint.reduce((s, p) => s + p[0], 0) / b.footprint.length
         const cz = b.footprint.reduce((s, p) => s + p[1], 0) / b.footprint.length
-        const yBase = sample(cx, cz)
+        const yBase = sample(cx, cz) + yOffset
         return (
           <mesh key={`b-${i}`} geometry={geo} position={[0, yBase, 0]} castShadow receiveShadow>
             {/* DoubleSide because OSM way-winding is not guaranteed CCW
@@ -300,22 +313,20 @@ export function OSMLayers() {
   }, [bbox, baseHeightmap])
 
   if (!cfg.osmLayersEnabled) return null
-  // Manual admin overrides on top of the (auto) world-anchored OSM frame.
-  // Position is applied additively in world units; scaleY multiplies the
-  // vertical axis only — horizontal scaling would break the lat/lon ↔ XZ
-  // correspondence with the LiDAR mesh, which we want to preserve.
+  // Manual admin position offset on top of the auto-anchored OSM frame.
+  // No scaling — that would break the lat/lon ↔ XZ correspondence with
+  // the LiDAR mesh. Vertical fine-tuning of buildings goes through
+  // `osmBuildingsYOffset` inside BuildingsLayer instead.
   return (
-    <group
-      name="OSMLayers"
-      position={[cfg.osmOffsetX, cfg.osmOffsetY, cfg.osmOffsetZ]}
-      scale={[1, cfg.osmScaleY, 1]}
-    >
+    <group name="OSMLayers" position={[cfg.osmOffsetX, cfg.osmOffsetY, cfg.osmOffsetZ]}>
       {cfg.osmTerrainVisible && <HeightmapTerrain />}
       {cfg.osmSeaVisible && (
         <WaterLayer widthWorld={dims.widthWorld} depthWorld={dims.depthWorld} color={cfg.osmSeaColor} />
       )}
       {cfg.osmRoadsVisible && <RoadsLayer sample={sample} />}
-      {cfg.osmBuildingsVisible && <BuildingsLayer sample={sample} />}
+      {cfg.osmBuildingsVisible && (
+        <BuildingsLayer sample={sample} yOffset={cfg.osmBuildingsYOffset} />
+      )}
       {cfg.osmVegetationVisible && <VegetationLayer sample={sample} />}
     </group>
   )
