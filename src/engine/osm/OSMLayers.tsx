@@ -5,7 +5,12 @@ import * as THREE from 'three'
 import { useMapImportStore } from '../../state/useMapImportStore'
 import { useUIStore } from '../../state/useUIStore'
 import { useBaseMeshStore, makeBaseMeshSampler } from '../../state/useBaseMeshStore'
-import { ELEVATION_EXAGGERATION, METERS_TO_WORLD, bboxWorldDimensions } from '../../services/osm/worldScale'
+import {
+  ELEVATION_EXAGGERATION,
+  METERS_TO_WORLD,
+  bboxCenterOffsetWorld,
+  bboxWorldDimensions,
+} from '../../services/osm/worldScale'
 
 function pointInPolygon2D(px: number, py: number, polygon: Array<[number, number]>) {
   if (polygon.length < 3) return true
@@ -239,20 +244,17 @@ export function OSMLayers() {
   const bbox = useMapImportStore((s) => s.bbox)
   const baseHeightmap = useBaseMeshStore((s) => s.heightmap)
 
-  // OSM features were laid out around the OSM bbox centre. The LiDAR mesh
-  // sits at the world origin (its own bbox centre). When the two bboxes
-  // don't share a centre, every OSM feature is offset from the LiDAR
-  // surface by (Δlon, Δlat) in metres. Translating the entire OSM group
-  // re-anchors them to the LiDAR-bbox-centred world.
-  const osmOffset = useMemo<[number, number, number]>(() => {
-    if (!baseHeightmap || !bbox) return [0, 0, 0]
-    const lidarLat = (baseHeightmap.bbox.north + baseHeightmap.bbox.south) / 2
-    const lidarLon = (baseHeightmap.bbox.east + baseHeightmap.bbox.west) / 2
-    const osmLat = (bbox.north + bbox.south) / 2
-    const osmLon = (bbox.east + bbox.west) / 2
-    const dxMeters = (osmLon - lidarLon) * 111320 * Math.cos((lidarLat * Math.PI) / 180)
-    const dzMeters = (osmLat - lidarLat) * 110540
-    return [dxMeters * METERS_TO_WORLD, 0, dzMeters * METERS_TO_WORLD]
+  // World origin is now anchored to the *picked* OSM bbox centre. The
+  // LiDAR mesh translates itself to its true geographic position inside
+  // that frame (see CustomIslandMesh.tsx), so the OSM group can stay at
+  // origin and every feature lands at its real lat/lon.
+  //
+  // We still compute the LiDAR→world offset here so the height sampler
+  // can ask the (origin-centred) LiDAR heightmap the right question —
+  // a world-space (x, z) hits the LiDAR at LOCAL (x − dx, z − dz).
+  const lidarGeoOffset = useMemo(() => {
+    if (!baseHeightmap || !bbox) return { dx: 0, dz: 0 }
+    return bboxCenterOffsetWorld(baseHeightmap.bbox, bbox)
   }, [baseHeightmap, bbox])
 
   // Prefer the high-resolution LiDAR heightmap (baked alongside the GLB)
@@ -263,15 +265,15 @@ export function OSMLayers() {
     if (baseHeightmap) {
       const inner = makeBaseMeshSampler(baseHeightmap)
       // The GLB primitive is rendered with `scale={customMeshScale}` and
-      // `position={[0, customMeshYOffset, 0]}`, so a world-space point
-      // (x, z) maps to mesh-local (x/scale, z/scale), and the mesh-local
-      // height must be re-scaled and offset to land in world Y.
-      // We also add the OSM→LiDAR centre offset so the (x, z) the OSM
-      // features pass in is interpreted in the LiDAR mesh's frame.
+      // `position={[lidarGeoOffset.dx, customMeshYOffset, lidarGeoOffset.dz]}`,
+      // so a world-space point (x, z) maps to mesh-local
+      //   ((x − dx) / scale, (z − dz) / scale)
+      // and the mesh-local height must be re-scaled and offset to land
+      // in world Y.
       const s = cfg.customMeshScale || 1
       const yOff = cfg.customMeshYOffset || 0
-      const [dx, , dz] = osmOffset
-      return (x: number, z: number) => inner((x + dx) / s, (z + dz) / s) * s + yOff
+      const { dx, dz } = lidarGeoOffset
+      return (x: number, z: number) => inner((x - dx) / s, (z - dz) / s) * s + yOff
     }
     if (terrain && bbox) {
       const { widthWorld, depthWorld } = bboxWorldDimensions(bbox)
@@ -282,7 +284,7 @@ export function OSMLayers() {
       return makeHeightSampler(terrain.width, terrain.height, terrain.heights, widthWorld, depthWorld, yMin)
     }
     return (_x: number, _z: number) => 0
-  }, [baseHeightmap, terrain, bbox, cfg.customMeshScale, cfg.customMeshYOffset, osmOffset])
+  }, [baseHeightmap, terrain, bbox, cfg.customMeshScale, cfg.customMeshYOffset, lidarGeoOffset])
 
   const dims = useMemo(() => {
     if (bbox) return bboxWorldDimensions(bbox)
@@ -299,7 +301,7 @@ export function OSMLayers() {
 
   if (!cfg.osmLayersEnabled) return null
   return (
-    <group name="OSMLayers" position={osmOffset}>
+    <group name="OSMLayers">
       {cfg.osmTerrainVisible && <HeightmapTerrain />}
       {cfg.osmSeaVisible && (
         <WaterLayer widthWorld={dims.widthWorld} depthWorld={dims.depthWorld} color={cfg.osmSeaColor} />

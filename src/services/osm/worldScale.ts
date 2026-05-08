@@ -34,3 +34,22 @@ export function latLonToWorld(lon: number, lat: number, bbox: BBox): XY {
   const mz = (lat - centerLat) * 110540
   return [mx * METERS_TO_WORLD, mz * METERS_TO_WORLD]
 }
+
+/**
+ * World-units delta from `anchor` bbox centre to `target` bbox centre.
+ *
+ * Used to anchor the world to the user's picked extent and place the
+ * (fixed-bbox) LiDAR mesh at its real geographic position inside it.
+ * Returns [dx, dz] in world units, with +X = east and +Z = north.
+ */
+export function bboxCenterOffsetWorld(target: BBox, anchor: BBox): { dx: number; dz: number } {
+  const targetLat = (target.north + target.south) / 2
+  const targetLon = (target.east + target.west) / 2
+  const anchorLat = (anchor.north + anchor.south) / 2
+  const anchorLon = (anchor.east + anchor.west) / 2
+  // Use the anchor's latitude for the longitude→metres conversion so
+  // both bboxes flatten the same way when they straddle the anchor.
+  const dxMeters = (targetLon - anchorLon) * 111320 * Math.cos((anchorLat * Math.PI) / 180)
+  const dzMeters = (targetLat - anchorLat) * 110540
+  return { dx: dxMeters * METERS_TO_WORLD, dz: dzMeters * METERS_TO_WORLD }
+}

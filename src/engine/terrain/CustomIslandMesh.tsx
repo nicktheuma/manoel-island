@@ -4,7 +4,9 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js'
 import * as THREE from 'three'
 import { useUIStore } from '../../state/useUIStore'
 import { decodeHeightsBase64, useBaseMeshStore } from '../../state/useBaseMeshStore'
+import { useMapImportStore } from '../../state/useMapImportStore'
 import { useWorldStore } from '../../state/useWorldStore'
+import { bboxCenterOffsetWorld } from '../../services/osm/worldScale'
 import type { SculptBrushApi } from './useSculptBrush'
 
 type InnerProps = {
@@ -18,6 +20,16 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
   const cfg = useUIStore((s) => s.adminConfig)
   const heights = useWorldStore((s) => s.heights)
   const sampleDelta = useWorldStore((s) => s.sampleHeightBilinear)
+  const baseHeightmap = useBaseMeshStore((s) => s.heightmap)
+  const osmBbox = useMapImportStore((s) => s.bbox)
+
+  // World-units offset from world origin (= picked OSM bbox centre) to
+  // the LiDAR's true geographic centre. When no extent has been picked
+  // yet this is zero and the mesh sits at origin like before.
+  const geoOffset = useMemo(() => {
+    if (!baseHeightmap || !osmBbox) return { dx: 0, dz: 0 }
+    return bboxCenterOffsetWorld(baseHeightmap.bbox, osmBbox)
+  }, [baseHeightmap, osmBbox])
 
   const material = useMemo(
     () =>
@@ -78,18 +90,22 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
     const apply = () => {
       frame = 0
       const scale = scaleRef.current
-      // The mesh sits at world position (0, yOffset, 0) and is uniformly
+      const ox = geoOffset.dx
+      const oz = geoOffset.dz
+      // The mesh sits at world position (ox, yOffset, oz) and is uniformly
       // scaled by `scale`. A vertex at LOCAL (lx, ly, lz) lands at WORLD
-      //   (lx*scale, ly*scale + yOffset, lz*scale)
-      // We sample the chunked heightmap by world XZ, scale the delta
-      // back into local Y, then write to the buffer.
+      //   (lx*scale + ox, ly*scale + yOffset, lz*scale + oz)
+      // We sample the chunked heightmap by that world XZ, scale the delta
+      // back into local Y, then write to the buffer. Without the offset
+      // the sample would always read from world origin and sculpts would
+      // appear at the wrong place after the user picks a 2D-map extent.
       for (const { mesh, originalY, positionAttr } of baselines.current) {
         const arr = positionAttr.array as Float32Array
         for (let i = 0; i < positionAttr.count; i++) {
           const lx = arr[i * 3 + 0]
           const lz = arr[i * 3 + 2]
-          const wx = lx * scale
-          const wz = lz * scale
+          const wx = lx * scale + ox
+          const wz = lz * scale + oz
           const deltaWorld = sampleDelta(wx, wz)
           arr[i * 3 + 1] = originalY[i] + deltaWorld / scale
         }
@@ -104,7 +120,7 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
     return () => {
       if (frame) cancelAnimationFrame(frame)
     }
-  }, [heights, sampleDelta])
+  }, [heights, sampleDelta, geoOffset])
 
   useEffect(() => {
     return () => {
@@ -137,7 +153,7 @@ function CustomIslandMeshInner({ url, sculptActive, sculpt }: InnerProps) {
   return (
     <primitive
       object={sceneClone}
-      position={[0, cfg.customMeshYOffset, 0]}
+      position={[geoOffset.dx, cfg.customMeshYOffset, geoOffset.dz]}
       scale={cfg.customMeshScale}
       onPointerDown={sculptActive ? onDown : undefined}
       onPointerMove={sculptActive ? onMove : undefined}
