@@ -1,0 +1,22 @@
+{
+  "type": "Polygon",
+  "_comment": "Approximate outline of Manoel Island (Malta). Slightly generous so the LiDAR ground returns inside the polygon are kept while Sliema (south) and Gżira (north) bleed-in is excluded. The build-base-mesh.mjs --outline flag treats anything outside the polygon as sea, which suppresses the banded 'tile' artefact caused by nearest-neighbour fill-in across the harbour cells.",
+  "coordinates": [[
+    [14.5050, 35.8995],
+    [14.5070, 35.8993],
+    [14.5095, 35.8992],
+    [14.5118, 35.8995],
+    [14.5128, 35.8998],
+    [14.5135, 35.9005],
+    [14.5138, 35.9012],
+    [14.5135, 35.9018],
+    [14.5125, 35.9022],
+    [14.5108, 35.9024],
+    [14.5092, 35.9024],
+    [14.5075, 35.9022],
+    [14.5060, 35.9018],
+    [14.5050, 35.9012],
+    [14.5048, 35.9005],
+    [14.5050, 35.8995]
+  ]]
+}

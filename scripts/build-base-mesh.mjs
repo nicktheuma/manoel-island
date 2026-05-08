@@ -236,7 +236,17 @@ function pointInPolygon(px, py, polygon) {
 
 async function loadOutline(filePath) {
   if (!filePath) return null
-  const txt = await fs.readFile(filePath, 'utf8')
+  let txt
+  try {
+    txt = await fs.readFile(filePath, 'utf8')
+  } catch (e) {
+    // The default outline path (`data/manoel-outline.geojson`) is
+    // optional — if it's missing we just skip clipping and rely on
+    // the bbox alone. An *explicit* user-supplied path that doesn't
+    // exist still throws so typos get caught.
+    if (e?.code === 'ENOENT' && filePath === 'data/manoel-outline.geojson') return null
+    throw e
+  }
   const json = JSON.parse(txt)
   // Accept either GeoJSON Polygon or array of [lon, lat] pairs
   if (Array.isArray(json) && Array.isArray(json[0])) return json
@@ -257,8 +267,17 @@ async function main() {
   const exaggeration = parseFloat(args.exaggeration || '1.0')
   const scale = parseFloat(args.scale || '0.05') // must match worldScale.ts METERS_TO_WORLD
   const groundClass = parseInt(args['ground-class'] || '2', 10)
+  // Number of nearest-neighbour fill passes for empty cells. Each pass
+  // spreads valid heights one cell outward. With sparse LiDAR coverage
+  // (Manoel is ~1 pt/cell over land, 0 over harbour water) too many
+  // passes bleed land elevations across the bbox and produce a banded
+  // "tiled" appearance where Sliema, Manoel, and Gżira look like
+  // repeated land strips with sea between. 1 pass is the sweet spot.
+  const fillPasses = parseInt(args['fill-passes'] || '1', 10)
   const bbox = bboxFromString(args.bbox || '14.502,35.895,14.519,35.905')
-  const outline = await loadOutline(args.outline)
+  const outline = await loadOutline(
+    args.outline === undefined ? 'data/manoel-outline.geojson' : args.outline,
+  )
 
   console.log('▶ Manoel Island base-mesh build')
   console.log('  input  :', inputDir)
@@ -344,11 +363,29 @@ async function main() {
       heights[i] = NaN
     }
   }
-  for (let pass = 0; pass < 4; pass++) {
+  // Precompute a per-cell mask of "is this cell inside the outline?".
+  // When an outline is supplied, only cells inside it are eligible for
+  // nearest-neighbour fill — everything else stays NaN and falls back
+  // to sea-floor below. This is what stops Sliema/Gżira ground heights
+  // from bleeding across the harbour into Manoel and creating the
+  // repeated-tile look.
+  const insideOutline = outline ? new Uint8Array(grid * grid) : null
+  if (outline && insideOutline) {
+    for (let y = 0; y < grid; y++) {
+      const lat = bbox.south + ((y + 0.5) / grid) * (bbox.north - bbox.south)
+      for (let x = 0; x < grid; x++) {
+        const lon = bbox.west + ((x + 0.5) / grid) * (bbox.east - bbox.west)
+        insideOutline[y * grid + x] = pointInPolygon(lon, lat, outline) ? 1 : 0
+      }
+    }
+  }
+
+  for (let pass = 0; pass < fillPasses; pass++) {
     for (let y = 0; y < grid; y++) {
       for (let x = 0; x < grid; x++) {
         const i = y * grid + x
         if (!Number.isNaN(heights[i])) continue
+        if (insideOutline && !insideOutline[i]) continue
         let s = 0
         let n = 0
         for (let dy = -1; dy <= 1; dy++) {
@@ -369,9 +406,22 @@ async function main() {
   }
   const seaFloor = zMin - (zMax - zMin) * 0.4
   for (let i = 0; i < heights.length; i++) {
-    if (Number.isNaN(heights[i])) heights[i] = seaFloor
+    // Clamp out-of-outline cells to sea-floor regardless of any value
+    // they might have picked up before the outline mask was applied.
+    if (Number.isNaN(heights[i]) || (insideOutline && !insideOutline[i])) {
+      heights[i] = seaFloor
+    }
   }
   console.log(`  · z range: ${zMin.toFixed(2)}m → ${zMax.toFixed(2)}m`)
+  if (outline && insideOutline) {
+    let inside = 0
+    for (let i = 0; i < insideOutline.length; i++) inside += insideOutline[i]
+    console.log(
+      `  · outline   : ${inside} of ${grid * grid} cells inside (` +
+        `${((inside / (grid * grid)) * 100).toFixed(1)}%)`,
+    )
+  }
+  console.log(`  · fill passes: ${fillPasses}`)
 
   // Build a plane geometry sized to the bbox in world units
   const centerLat = (bbox.north + bbox.south) / 2
