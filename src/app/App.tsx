@@ -187,44 +187,46 @@ export function App() {
   useEffect(() => {
     let mounted = true
     ;(async () => {
-      // Step 1: admin access. A failure here is the only thing that should
-      // ever flip `canAdmin` back to false (e.g. user signed out, RLS denial).
-      let allowed = false
-      try {
-        allowed = await getWorldAdminAccess(worldId)
-      } catch (e) {
+      // Two independent concerns, run in parallel:
+      //   (a) Can the current viewer write admin settings? Drives the
+      //       toolbar Admin button visibility.
+      //   (b) What are the saved admin settings for this world? Drives
+      //       what every viewer (signed-in or not) sees on the canvas —
+      //       sea colour, mesh URL, OSM toggles, etc. RLS already permits
+      //       anon reads on `world_admin_configs` for public worlds via
+      //       `world_role()`, so we don't need to be signed in.
+      const accessP = getWorldAdminAccess(worldId).catch((e) => {
         console.warn('Admin access check failed:', e)
-        allowed = false
-      }
-      if (!mounted) return
-      setCanAdmin(allowed)
-      if (!allowed) {
-        setAdminEnabled(false)
-        setAdminConfigHydrated(false)
-        return
-      }
-
-      // Step 2: config hydration. A failure here is non-fatal — fall back
-      // to the default config and keep the admin panel reachable, otherwise
-      // a transient network blip flicks the Admin button off mid-session.
-      try {
-        const cfg = await loadWorldAdminConfig(worldId)
-        if (mounted) {
-          setAdminConfig(cfg)
-          setAdminConfigHydrated(true)
-        }
-      } catch (e) {
+        return false
+      })
+      const configP = loadWorldAdminConfig(worldId).catch((e) => {
         console.warn('Admin config load failed (using defaults):', e)
-        if (mounted) setAdminConfigHydrated(true)
-      }
+        return null
+      })
+
+      const [allowed, cfg] = await Promise.all([accessP, configP])
+      if (!mounted) return
+
+      setCanAdmin(allowed)
+      if (!allowed) setAdminEnabled(false)
+
+      // Always hydrate from the server when we got a row back, even when
+      // anonymous — that way the saved sea colour shows up in private
+      // windows / signed-out browsers, exactly like a public CMS.
+      if (cfg) setAdminConfig(cfg)
+      setAdminConfigHydrated(true)
     })()
     return () => {
       mounted = false
     }
   }, [worldId, authTick, setAdminConfig, setCanAdmin, setAdminEnabled])
 
+  // Persist admin-panel changes after a short debounce. Gated on
+  // `canAdmin` so anon viewers (who hydrate the same state via RLS) don't
+  // spam the server with rejected writes when their local config drifts.
+  const canAdmin = useUIStore((s) => s.canAdmin)
   useEffect(() => {
-    if (!isSupabaseConfigured() || !adminConfigHydrated) return
+    if (!isSupabaseConfigured() || !adminConfigHydrated || !canAdmin) return
     let cancelled = false
     const t = window.setTimeout(() => {
       void saveWorldAdminConfig(worldId, adminConfig).catch((e) => {
@@ -235,7 +237,7 @@ export function App() {
       cancelled = true
       window.clearTimeout(t)
     }
-  }, [worldId, adminConfig, adminConfigHydrated])
+  }, [worldId, adminConfig, adminConfigHydrated, canAdmin])
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-stone-950">
