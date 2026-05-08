@@ -7,36 +7,34 @@ type Element = ({ type: 'node' } & Node) | ({ type: 'way' } & Way)
 
 type OverpassResponse = { elements: Element[] }
 
-const OVERPASS_ENDPOINTS = [
-  'https://overpass-api.de/api/interpreter',
-  'https://overpass.kumi.systems/api/interpreter',
-  'https://overpass.openstreetmap.fr/api/interpreter',
-]
-const OVERPASS_TIMEOUT_MS = 25000
+// Always go through our own origin (`/api/overpass`) — never directly to
+// the public Overpass endpoints. The proxy handles mirror failover and
+// re-emits permissive CORS headers, and Vite's dev-server proxy stitches
+// the same path through to upstream during `npm run dev`. Calling the
+// upstream directly from the browser was blocked by CORS whenever a
+// mirror was overloaded and replied without an `Access-Control-Allow-Origin`
+// header.
+const OVERPASS_PROXY = '/api/overpass'
+const OVERPASS_TIMEOUT_MS = 30_000
 
 async function postOverpass(query: string): Promise<Response> {
-  let lastError: unknown = null
-  for (const endpoint of OVERPASS_ENDPOINTS) {
-    const ctrl = new AbortController()
-    const timeoutId = window.setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
-    try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
-        body: 'data=' + encodeURIComponent(query),
-        signal: ctrl.signal,
-      })
-      window.clearTimeout(timeoutId)
-      if (res.ok) return res
-      lastError = new Error(`${endpoint} responded ${res.status}`)
-    } catch (err) {
-      window.clearTimeout(timeoutId)
-      lastError = err
+  const ctrl = new AbortController()
+  const timeoutId = window.setTimeout(() => ctrl.abort(), OVERPASS_TIMEOUT_MS)
+  try {
+    const res = await fetch(OVERPASS_PROXY, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=UTF-8' },
+      body: 'data=' + encodeURIComponent(query),
+      signal: ctrl.signal,
+    })
+    if (!res.ok) {
+      const text = await res.text().catch(() => '')
+      throw new Error(`Overpass proxy responded ${res.status}: ${text.slice(0, 200)}`)
     }
+    return res
+  } finally {
+    window.clearTimeout(timeoutId)
   }
-  throw new Error(
-    `Overpass API unreachable on all mirrors (${lastError instanceof Error ? lastError.message : 'unknown error'}). Check your network/firewall.`,
-  )
 }
 
 function isClosed(points: XY[]) {
