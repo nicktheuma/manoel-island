@@ -1,0 +1,412 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Manoel Island LiDAR diagnostic</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        margin: 0;
+        font-family: system-ui, sans-serif;
+        background: #1c1917;
+        color: #e7e5e4;
+      }
+      header {
+        padding: 16px 24px;
+        border-bottom: 1px solid #44403c;
+      }
+      h1 {
+        margin: 0 0 4px;
+        font-size: 18px;
+      }
+      header p {
+        margin: 0;
+        font-size: 13px;
+        color: #a8a29e;
+      }
+      main {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        padding: 24px;
+      }
+      section {
+        background: #0c0a09;
+        border: 1px solid #292524;
+        border-radius: 8px;
+        padding: 16px;
+      }
+      section h2 {
+        font-size: 14px;
+        margin: 0 0 12px;
+        color: #fbbf24;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+      pre {
+        font-family: ui-monospace, monospace;
+        font-size: 12px;
+        background: #0a0a09;
+        padding: 12px;
+        border-radius: 6px;
+        overflow: auto;
+        margin: 0;
+        color: #d6d3d1;
+      }
+      canvas#heatmap {
+        image-rendering: pixelated;
+        background: #000;
+        max-width: 100%;
+        border: 1px solid #44403c;
+        border-radius: 4px;
+        display: block;
+      }
+      #scene {
+        width: 100%;
+        height: 480px;
+        background: #292524;
+        border-radius: 6px;
+        display: block;
+      }
+      .controls {
+        margin-top: 8px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: #292524;
+        border: 1px solid #44403c;
+        color: #e7e5e4;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+      }
+      button:hover {
+        background: #44403c;
+      }
+      .legend {
+        font-size: 11px;
+        color: #a8a29e;
+        margin-top: 6px;
+      }
+      .ok { color: #86efac; }
+      .warn { color: #fbbf24; }
+      .err { color: #f87171; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Manoel Island LiDAR diagnostic</h1>
+      <p>
+        Live read-out of <code>/models/manoel-island.glb</code> and its sidecar.
+        Use this to figure out whether tiling is in the data, in the GLB, or in the renderer.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>1 · Heightmap from sidecar JSON</h2>
+        <p style="font-size: 12px; color: #a8a29e; margin: 0 0 8px">
+          Pixel = one heightmap cell. North is up. Greyscale = elevation (black = sea-floor, white = highest).
+          If you see the LiDAR pattern repeated side-by-side here, it's a <em>data</em> bug (build script).
+          If this looks like one clean island but the 3D scene is tiled, it's a <em>renderer</em> bug.
+        </p>
+        <canvas id="heatmap" width="256" height="256"></canvas>
+        <div class="legend">
+          Colours rescaled per render. Blue overlay = cells outside the Manoel outline (forced to sea-floor).
+        </div>
+        <pre id="meta">loading…</pre>
+      </section>
+
+      <section>
+        <h2>2 · GLB inspection</h2>
+        <p style="font-size: 12px; color: #a8a29e; margin: 0 0 8px">
+          Loads the GLB exactly the way the app does. Counts meshes, primitives, vertices.
+          If the count looks wrong (e.g. multiple meshes, vertex count not 256×256), the build is producing
+          duplicates.
+        </p>
+        <pre id="glb-info">loading…</pre>
+      </section>
+
+      <section style="grid-column: span 2">
+        <h2>3 · Isolated 3D render of just the GLB</h2>
+        <p style="font-size: 12px; color: #a8a29e; margin: 0 0 8px">
+          The GLB is rendered alone here — no OSM, no terrain fallback, no transformations,
+          no admin offsets. If the 3D mesh looks tiled in this view, the GLB itself is the
+          source. Drag to rotate, scroll to zoom.
+        </p>
+        <canvas id="scene"></canvas>
+        <div class="controls">
+          <button id="toggle-wire">Toggle wireframe</button>
+          <button id="toggle-axes">Toggle axes</button>
+          <button id="reset-cam">Reset camera</button>
+          <span class="legend" id="render-info"></span>
+        </div>
+      </section>
+    </main>
+
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.0/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.0/examples/jsm/"
+        }
+      }
+    </script>
+    <script type="module">
+      import * as THREE from 'three'
+      import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'
+      import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js'
+      import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+
+      const heatmap = document.getElementById('heatmap')
+      const meta = document.getElementById('meta')
+      const glbInfo = document.getElementById('glb-info')
+      const renderInfo = document.getElementById('render-info')
+
+      // -------- 1. Sidecar heatmap --------
+      async function renderHeatmap() {
+        const res = await fetch('/models/manoel-island.json')
+        if (!res.ok) {
+          meta.innerHTML = `<span class="err">JSON sidecar fetch failed (${res.status}).</span>`
+          return
+        }
+        const j = await res.json()
+        const grid = j.grid
+        heatmap.width = grid
+        heatmap.height = grid
+        // Decode base64 → Float32Array
+        const bin = atob(j.heightsBase64)
+        const buf = new ArrayBuffer(bin.length)
+        const u8 = new Uint8Array(buf)
+        for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i)
+        const f = new Float32Array(buf)
+        if (f.length !== grid * grid) {
+          meta.innerHTML = `<span class="err">Heights length ${f.length} ≠ ${grid * grid}.</span>`
+          return
+        }
+        // Pixel-rescale heights so the dynamic range fills 0..255.
+        let lo = Infinity
+        let hi = -Infinity
+        for (let i = 0; i < f.length; i++) {
+          if (f[i] < lo) lo = f[i]
+          if (f[i] > hi) hi = f[i]
+        }
+        const ctx = heatmap.getContext('2d')
+        const img = ctx.createImageData(grid, grid)
+        // Image y=0 is top of canvas; sidecar y=0 is south (bottom of map).
+        // Flip vertically so north points up in the canvas.
+        for (let y = 0; y < grid; y++) {
+          for (let x = 0; x < grid; x++) {
+            const srcY = grid - 1 - y
+            const v = f[srcY * grid + x]
+            const t = (v - lo) / (hi - lo + 1e-9)
+            const g = Math.round(t * 255)
+            const o = (y * grid + x) * 4
+            img.data[o + 0] = g
+            img.data[o + 1] = g
+            img.data[o + 2] = g
+            img.data[o + 3] = 255
+          }
+        }
+        ctx.putImageData(img, 0, 0)
+        // Scale up so it's visible.
+        heatmap.style.width = grid * 2 + 'px'
+        heatmap.style.height = grid * 2 + 'px'
+
+        // Stats so we can compare to what we expect for Manoel.
+        let belowZero = 0
+        let lowLand = 0
+        let midLand = 0
+        let highLand = 0
+        for (let i = 0; i < f.length; i++) {
+          const v = f[i]
+          if (v < 0) belowZero++
+          else if (v < 5) lowLand++
+          else if (v < 20) midLand++
+          else highLand++
+        }
+        const total = f.length
+        meta.innerHTML =
+          `bbox: ${JSON.stringify(j.bbox)}\n` +
+          `grid: ${grid}×${grid}  (${total} cells)\n` +
+          `widthWorld: ${j.widthWorld?.toFixed?.(2)}  depthWorld: ${j.depthWorld?.toFixed?.(2)}\n` +
+          `zMin: ${j.zMin?.toFixed?.(2)}m  zMax: ${j.zMax?.toFixed?.(2)}m  scale: ${j.scale}  exaggeration: ${j.exaggeration}\n\n` +
+          `cell distribution:\n` +
+          `  sea-floor (<0m) : ${belowZero}  (${((belowZero / total) * 100).toFixed(1)}%)\n` +
+          `  low land (0-5m): ${lowLand}  (${((lowLand / total) * 100).toFixed(1)}%)\n` +
+          `  mid land (5-20m): ${midLand}  (${((midLand / total) * 100).toFixed(1)}%)\n` +
+          `  high (>20m)    : ${highLand}  (${((highLand / total) * 100).toFixed(1)}%)`
+      }
+
+      // -------- 2. GLB inspection --------
+      let loadedScene = null
+      let primaryMesh = null
+      let bbox3 = null
+
+      async function inspectGlb() {
+        const draco = new DRACOLoader()
+        draco.setDecoderPath('https://www.gstatic.com/draco/v1/decoders/')
+        const loader = new GLTFLoader()
+        loader.setDRACOLoader(draco)
+        const gltf = await loader.loadAsync('/models/manoel-island.glb')
+        loadedScene = gltf.scene
+
+        const meshes = []
+        gltf.scene.traverse((o) => {
+          if (o.isMesh) meshes.push(o)
+        })
+        const lines = []
+        lines.push(`top-level scene name: ${gltf.scene.name || '(unnamed)'}`)
+        lines.push(`meshes found       : ${meshes.length}`)
+        for (const m of meshes) {
+          const pos = m.geometry.attributes.position
+          const idx = m.geometry.index
+          lines.push(
+            `  · "${m.name}"  vertices=${pos.count}  triangles=${idx ? idx.count / 3 : 'n/a'}`,
+          )
+        }
+        // Bounding box of the whole scene.
+        const box = new THREE.Box3().setFromObject(gltf.scene)
+        bbox3 = box
+        const size = new THREE.Vector3()
+        box.getSize(size)
+        const c = new THREE.Vector3()
+        box.getCenter(c)
+        lines.push('')
+        lines.push(`scene bounding box (world units):`)
+        lines.push(
+          `  min = (${box.min.x.toFixed(2)}, ${box.min.y.toFixed(2)}, ${box.min.z.toFixed(2)})`,
+        )
+        lines.push(
+          `  max = (${box.max.x.toFixed(2)}, ${box.max.y.toFixed(2)}, ${box.max.z.toFixed(2)})`,
+        )
+        lines.push(`  size = (${size.x.toFixed(2)}, ${size.y.toFixed(2)}, ${size.z.toFixed(2)})`)
+        lines.push(`  centre = (${c.x.toFixed(2)}, ${c.y.toFixed(2)}, ${c.z.toFixed(2)})`)
+
+        // Sanity check: do any vertices share an XZ position with another vertex
+        // that has a different Y? That would be a sign of duplicated geometry.
+        if (meshes.length === 1) {
+          primaryMesh = meshes[0]
+          const pos = primaryMesh.geometry.attributes.position
+          let dupSameY = 0
+          let dupDiffY = 0
+          // Bucket by quantised XZ.
+          const map = new Map()
+          for (let i = 0; i < pos.count; i++) {
+            const x = Math.round(pos.getX(i) * 1000)
+            const z = Math.round(pos.getZ(i) * 1000)
+            const k = x + ':' + z
+            const y = pos.getY(i)
+            const prev = map.get(k)
+            if (prev === undefined) {
+              map.set(k, y)
+            } else if (Math.abs(prev - y) < 0.001) {
+              dupSameY++
+            } else {
+              dupDiffY++
+            }
+          }
+          lines.push('')
+          lines.push(`duplicate XZ vertices: ${dupSameY} same-Y, ${dupDiffY} diff-Y`)
+          lines.push(
+            `  (a 256×256 plane should have 0 of each; >0 diff-Y means stacked geometry)`,
+          )
+        }
+        glbInfo.textContent = lines.join('\n')
+        return gltf
+      }
+
+      // -------- 3. Isolated 3D render --------
+      const sceneCanvas = document.getElementById('scene')
+      const renderer = new THREE.WebGLRenderer({ canvas: sceneCanvas, antialias: true })
+      const scene = new THREE.Scene()
+      scene.background = new THREE.Color('#1c1917')
+      const camera = new THREE.PerspectiveCamera(45, 2, 0.1, 5000)
+      const controls = new OrbitControls(camera, sceneCanvas)
+      controls.enableDamping = true
+
+      const ambient = new THREE.AmbientLight('#fff', 0.6)
+      scene.add(ambient)
+      const dir = new THREE.DirectionalLight('#fff', 0.9)
+      dir.position.set(60, 90, 40)
+      scene.add(dir)
+      const axes = new THREE.AxesHelper(40)
+      scene.add(axes)
+
+      let wireframe = false
+
+      function resize() {
+        const r = sceneCanvas.getBoundingClientRect()
+        renderer.setSize(r.width, r.height, false)
+        camera.aspect = r.width / r.height
+        camera.updateProjectionMatrix()
+      }
+      window.addEventListener('resize', resize)
+      resize()
+
+      function frameMesh() {
+        if (!bbox3) return
+        const size = new THREE.Vector3()
+        bbox3.getSize(size)
+        const c = new THREE.Vector3()
+        bbox3.getCenter(c)
+        const r = Math.max(size.x, size.z) * 1.4
+        camera.position.set(c.x + r, c.y + r * 0.6, c.z + r)
+        controls.target.copy(c)
+        controls.update()
+      }
+
+      function animate() {
+        controls.update()
+        renderer.render(scene, camera)
+        requestAnimationFrame(animate)
+      }
+
+      // ---- buttons ----
+      document.getElementById('toggle-wire').addEventListener('click', () => {
+        wireframe = !wireframe
+        if (loadedScene) {
+          loadedScene.traverse((o) => {
+            if (o.isMesh) o.material.wireframe = wireframe
+          })
+        }
+      })
+      document.getElementById('toggle-axes').addEventListener('click', () => {
+        axes.visible = !axes.visible
+      })
+      document.getElementById('reset-cam').addEventListener('click', frameMesh)
+
+      // ---- main ----
+      ;(async () => {
+        try {
+          await renderHeatmap()
+        } catch (e) {
+          meta.innerHTML = `<span class="err">heatmap error: ${e.message}</span>`
+        }
+        try {
+          const gltf = await inspectGlb()
+          // Apply a basic schematic material so we can see the surface.
+          gltf.scene.traverse((o) => {
+            if (o.isMesh) {
+              o.material = new THREE.MeshStandardMaterial({
+                color: '#f5f5f4',
+                roughness: 1,
+                metalness: 0,
+                side: THREE.FrontSide,
+                wireframe,
+              })
+            }
+          })
+          scene.add(gltf.scene)
+          frameMesh()
+          renderInfo.textContent = ''
+          animate()
+        } catch (e) {
+          glbInfo.innerHTML = `<span class="err">GLB error: ${e.message}</span>`
+        }
+      })()
+    </script>
+  </body>
+</html>
